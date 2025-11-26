@@ -20,6 +20,7 @@
             background-color: #f7f3f0; /* Soft, creamy background */
             /* Addressing Compatibility Warning */
             text-size-adjust: 100%;
+            -webkit-text-size-adjust: 100%; /* Added for better cross-browser compatibility */
         }
         .chat-container {
             height: 85vh; /* Responsive height */
@@ -111,7 +112,7 @@
                 
                 <button 
                     id="send-button" 
-                    type="button" 
+                    type="submit" 
                     aria-label="Send message" 
                     class="bg-pink-500 text-white p-3 rounded-full hover:bg-pink-600 transition duration-150 shadow-md flex items-center justify-center disabled:bg-pink-300"
                 >
@@ -222,7 +223,8 @@
 
         // --- Chatbot Configuration ---
         const API_KEY = "AIzaSyDqZi2PHfuNciyv8Rsj8budM2I8t5HhC9g"; 
-        const API_URL_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+        // Updated model name to latest preview for text generation
+        const API_URL_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent";
 
         // ... [knowledgeBase and systemPrompt remain the same] ...
         const knowledgeBase = `
@@ -398,6 +400,8 @@
             const message = inputElement.value.trim();
             if (message === '') return;
 
+            console.log("sendMessage called with message:", message); // Debug log
+
             inputElement.value = '';
             appendMessage('user', message);
             document.getElementById('send-button').disabled = true;
@@ -415,9 +419,8 @@
 
         // --- Event Listeners (DOM Ready) ---
         document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('send-button').addEventListener('click', sendMessage);
-            
-            // Add form submission listener for 'Enter' key behavior
+            // Changed the button type to 'submit' and rely only on the form submit listener
+            // This handles both button click and pressing 'Enter' key
             const chatForm = document.getElementById('chat-form');
             if (chatForm) {
                 chatForm.addEventListener('submit', (e) => {
