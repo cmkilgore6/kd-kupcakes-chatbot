@@ -280,6 +280,7 @@
         1. Tone: Cheerful, friendly, and professional. Use light baking metaphors (e.g., "Let's whip up an answer," "That's the icing on the cake!").
         2. Focus: Emphasize that the bakery is made-to-order (customers choose the flavor) and home-based (no public storefront).
         3. Lead Qualification: If the user explicitly asks to "start a custom order," "place a large order," or "ask about a cake," immediately trigger the "CUSTOM_ORDER_FLOW" by starting the conversation with Step 1 of the Lead Qualification Script. Do not answer other questions until the flow is complete or canceled.
+        4. **Flavor Pivot Rule:** If the user names a specific flavor (like 'pumpkin') or asks for flavor details, confirm the information using the KB. Once the flavor is confirmed and the user has not yet entered the CUSTOM_ORDER_FLOW, gently pivot the conversation by asking them if they would like to **start a custom order**.
 
         Lead Qualification Script (CUSTOM_ORDER_FLOW):
         Step 1: "I'd be happy to start that for you! To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back?"
@@ -358,6 +359,14 @@
             
             // Convert to lowercase once for efficiency
             const userMessageLower = userQuery.toLowerCase();
+
+            // --- Improvement: Handle conversational closings ---
+            const closingPhrases = ['thats it', 'that is all', 'no more', 'i am good', 'thank you', 'thanks', 'bye', 'goodbye', 'no', 'nothing else'];
+            if (!isInOrderFlow && closingPhrases.some(phrase => userMessageLower.includes(phrase))) {
+                 return "You're all set! I hope we get to whip up something delicious for you soon. Let me know if anything else comes to mind! Have a sweet day! 🧁";
+            }
+            // --- End Improvement ---
+
 
             // --- Improvement: Handle general operational queries (like cancel/change) gracefully ---
             // If the user is asking about cancellation or changes OUTSIDE the flow, direct them to the baker.
