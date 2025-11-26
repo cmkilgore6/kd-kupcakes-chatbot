@@ -114,7 +114,7 @@
     <script type="text/javascript">
         // --- Configuration ---
         const APP_NAME = "K's Kupcakes";
-        // CRITICAL: PASTE YOUR GENERATED API KEY HERE. KEEP THE QUOTATION MARKS!
+        // CRITICAL: API Key is already inserted. DO NOT CHANGE THIS LINE.
         const API_KEY = "AIzaSyDqZi2PHfuNciyv8Rsj8budM2I8t5HhC9g"; 
 
         const knowledgeBase = `
@@ -206,10 +206,7 @@
                 return handleCustomOrderFlow(userQuery);
             }
             
-            // CRITICAL CHECK 1: Ensure the key is present
-            if (API_KEY === "PASTE_YOUR_GENERATED_API_KEY_HERE") {
-                return `<div class="error-message">CRITICAL ERROR: The API key placeholder is still in the code! Please replace "PASTE_YOUR_GENERATED_API_KEY_HERE" in the index.html file with the actual key you generated.</div>`;
-            }
+            // CRITICAL CHECK: Key is present. No need to check for placeholder.
 
             const fullQuery = `
                 KNOWLEDGE BASE:\n---\n${knowledgeBase}\n---\n
@@ -221,7 +218,8 @@
                 systemInstruction: { parts: [{ text: systemPrompt }] },
             };
 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+            // *** IMPORTANT FIX: Switched to standard gemini-2.5-flash endpoint ***
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
 
             let response;
             let retries = 0;
@@ -244,7 +242,7 @@
                         if (status === 400 || status === 403) {
                             // 400/403 often means invalid key, disabled key, or usage limits
                             return `<div class="error-message">
-                                    FATAL API ERROR (Code ${status}): Sprinkles can't talk! This usually means the API key is invalid, misspelled, or restricted. Please double-check your key in the code or visit Google AI Studio to ensure it is active.
+                                    FATAL API ERROR (Code ${status}): Sprinkles can't talk! This means the key is likely invalid or restricted. Please double-check your API Key in the Google AI Studio settings.
                                     </div>`;
                         }
                     }
