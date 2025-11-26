@@ -359,8 +359,16 @@
             // Convert to lowercase once for efficiency
             const userMessageLower = userQuery.toLowerCase();
 
-            // Define trigger phrases for the custom order flow
-            const flowTriggers = ['custom order', 'place order', 'start order', 'yes', 'i do', 'i want to', 'i want', 'cake'];
+            // --- Improvement: Handle general operational queries (like cancel/change) gracefully ---
+            // If the user is asking about cancellation or changes OUTSIDE the flow, direct them to the baker.
+            if (!isInOrderFlow && (userMessageLower.includes('cancel') || userMessageLower.includes('change order') || userMessageLower.includes('policy'))) {
+                 return `To ensure the fastest processing for changes or cancellations, please call our baker directly at **(407) 799-0341**. Since we are a made-to-order bakery, any adjustments must be confirmed verbally! That's the best way to ensure the freshest results!`;
+            }
+            // --- End Improvement ---
+
+
+            // Define trigger phrases for the custom order flow. Removed 'yes' as it was too vague.
+            const flowTriggers = ['custom order', 'place order', 'start order', 'i do', 'i want to', 'i want', 'cake'];
 
             // Check if the message contains a trigger
             const isTriggeringFlow = flowTriggers.some(trigger => userMessageLower.includes(trigger));
