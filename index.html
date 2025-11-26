@@ -529,6 +529,13 @@ Step 3 (After Step 2 is answered): "Perfect! I have captured all the delicious d
 
         async function sendMessage() {
             const inputElement = document.getElementById('user-input');
+            
+            // Check if the input element exists before trying to read its value
+            if (!inputElement) {
+                console.error("Input element not found.");
+                return;
+            }
+
             const message = inputElement.value.trim();
             const sendButton = document.getElementById('send-button');
             const typingIndicator = document.getElementById('typing-indicator');
@@ -537,19 +544,26 @@ Step 3 (After Step 2 is answered): "Perfect! I have captured all the delicious d
 
             inputElement.value = '';
             appendMessage('user', message);
-            sendButton.disabled = true;
+            
+            // Disable button only if it exists
+            if (sendButton) sendButton.disabled = true;
 
-            // Show typing indicator
-            typingIndicator.classList.remove('hidden');
-            typingIndicator.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            // Show typing indicator only if it exists
+            if (typingIndicator) {
+                typingIndicator.classList.remove('hidden');
+                typingIndicator.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            }
+
 
             // Get the response
             const botResponse = await getGeminiResponse(message);
 
             // Hide typing indicator and display response
-            typingIndicator.classList.add('hidden');
+            if (typingIndicator) typingIndicator.classList.add('hidden');
             appendMessage('bot', botResponse);
-            sendButton.disabled = false;
+            
+            // Re-enable button only if it exists
+            if (sendButton) sendButton.disabled = false;
         }
 
         // Attach event listeners when the window loads
@@ -557,6 +571,8 @@ Step 3 (After Step 2 is answered): "Perfect! I have captured all the delicious d
             document.getElementById('send-button')?.addEventListener('click', sendMessage);
             document.getElementById('user-input')?.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
+                    // Prevent default to avoid form submission if this was a form
+                    e.preventDefault(); 
                     sendMessage();
                 }
             });
