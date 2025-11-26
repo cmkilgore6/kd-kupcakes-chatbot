@@ -148,7 +148,10 @@
         // --- UI Functions (Defined early to be used immediately) ---
         function appendMessage(sender, text) {
             const chatbox = document.getElementById('chat-messages');
-            if (!chatbox) return; // Guard clause if DOM isn't fully ready yet
+            if (!chatbox) {
+                 console.error("Chatbox element not found!");
+                 return; // Guard clause if DOM isn't fully ready yet
+            }
 
             const messageElement = document.createElement('div');
             messageElement.className = sender === 'user' ? 'user-message' : 'bot-message';
@@ -162,9 +165,6 @@
             chatbox.appendChild(messageElement);
             chatbox.scrollTop = chatbox.scrollHeight;
         }
-
-        // --- FIX: Display the initial greeting immediately before any async setup ---
-        appendMessage('bot', `Hello! I'm Sprinkles, your virtual baker and assistant for K's Kupcakes. How can I help you whip up the perfect order today? (Try asking about delivery, pricing, or "start a custom order"!)`);
 
 
         // 1. Initialize Firebase App
@@ -290,7 +290,8 @@
                 customOrderDetails.contact_info = userMessage;
                 orderStep = 2;
                 const recap = userMessage.length > 50 ? userMessage.substring(0, 50) + '...' : userMessage;
-                return `Thank you! I see you need: "${recap}". I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)`;
+                // ADDED explicit cancel instruction
+                return `Thank you! I see you need: "${recap}". I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book! Type 'cancel' to exit this flow.)`;
             } else if (orderStep === 2) {
                 customOrderDetails.details_and_location = userMessage;
                 orderStep = 3;
@@ -328,14 +329,25 @@
 
             orderStep = 1;
             isInOrderFlow = true;
-            return "I'd be happy to start that for you! To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back?";
+            // ADDED explicit cancel instruction
+            return "I'd be happy to start that for you! To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back? (Type 'cancel' to exit this flow.)";
         }
 
         async function getGeminiResponse(userQuery) {
             if (!userQuery) return "I need a message to get started! Ask me about flavors, delivery, or custom orders.";
+            
+            // Convert to lowercase once for efficiency
+            const userMessageLower = userQuery.toLowerCase();
 
-            // Check for order flow keywords and process if necessary
-            if (isInOrderFlow || userQuery.toLowerCase().includes('custom order') || userQuery.toLowerCase().includes('place order') || userQuery.toLowerCase().includes('start order')) {
+            // Define trigger phrases for the custom order flow
+            const flowTriggers = ['custom order', 'place order', 'start order', 'yes', 'i do', 'i want to', 'i want'];
+
+            // Check if the flow is active or if the message contains a trigger
+            const isTriggeringFlow = flowTriggers.some(trigger => userMessageLower.includes(trigger));
+
+
+            // FIXED: Now checks for common confirmation words like 'yes' to start the flow
+            if (isInOrderFlow || isTriggeringFlow) {
                 return await handleCustomOrderFlow(userQuery);
             }
             
@@ -419,7 +431,11 @@
 
         // --- Event Listeners (DOM Ready) ---
         document.addEventListener('DOMContentLoaded', () => {
-            // Changed the button type to 'submit' and rely only on the form submit listener
+             console.log("DOM Content Loaded. Initializing chat.");
+
+            // Display initial greeting here to ensure DOM readiness
+            appendMessage('bot', `Hello! I'm Sprinkles, your virtual baker and assistant for K's Kupcakes. How can I help you whip up the perfect order today? (Try asking about delivery, pricing, or "start a custom order"!)`);
+            
             // This handles both button click and pressing 'Enter' key
             const chatForm = document.getElementById('chat-form');
             if (chatForm) {
