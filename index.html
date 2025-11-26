@@ -107,16 +107,78 @@
                     </svg>
                 </button>
             </div>
+            <div id="status-message" class="text-xs mt-2 text-center text-gray-500">Connecting to database...</div>
         </footer>
     </div>
 
     <!-- The Chatbot Logic Script -->
-    <script type="text/javascript">
-        // --- Configuration ---
-        const APP_NAME = "K's Kupcakes";
-        // CRITICAL: API Key is already inserted. DO NOT CHANGE THIS LINE.
-        const API_KEY = "AIzaSyDqZi2PHfuNciyv8Rsj8budM2I8t5HhC9g"; 
+    <script type="module">
+        // --- Firebase Imports ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // --- Global Variables & Initialization ---
+        let db;
+        let auth;
+        let userId = 'anonymous';
+        let isAuthReady = false;
+        
+        // Use provided global variables
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+        setLogLevel('debug'); // Enable detailed Firebase logs
+
+        // 1. Initialize Firebase App
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
+
+        /**
+         * Determines the Firestore collection path for saving private order data.
+         * Data path: /artifacts/{appId}/users/{userId}/orders
+         * @returns {string} The path string.
+         */
+        function getPrivateOrderCollectionPath() {
+            return `artifacts/${appId}/users/${userId}/orders`;
+        }
+
+        // 2. Handle Authentication
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                isAuthReady = true;
+                console.log("Firebase Auth Ready. User ID:", userId);
+                document.getElementById('status-message').textContent = `Database connected. User: ${userId.substring(0, 8)}...`;
+            } else {
+                // If not signed in via token, sign in anonymously
+                try {
+                    await signInAnonymously(auth);
+                } catch (error) {
+                    console.error("Anonymous Sign-in failed:", error);
+                    document.getElementById('status-message').textContent = 'Database connection failed.';
+                }
+            }
+        });
+
+        // Use the initial auth token if provided (Canvas environment)
+        if (typeof __initial_auth_token !== 'undefined') {
+            signInWithCustomToken(auth, __initial_auth_token).catch(error => {
+                console.error("Custom token sign-in failed, trying anonymous:", error);
+                signInAnonymously(auth);
+            });
+        } else {
+            signInAnonymously(auth);
+        }
+
+        // --- Chatbot Configuration ---
+        const APP_NAME = "K's Kupcakes";
+        // API Key is already inserted from the previous step.
+        const API_KEY = "AIzaSyDqZi2PHfuNciyv8Rsj8budM2I8t5HhC9g"; 
+        const API_URL_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+
+        // ... [knowledgeBase and systemPrompt remain the same] ...
         const knowledgeBase = `
         // K's Kupcakes Knowledge Base (This is the grounding data for the AI)
         
@@ -162,14 +224,13 @@
         Step 2 (After Step 1 is answered): "Thank Muffin! I see you need [RECAP DETAILS]. I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)"
         Step 3 (After Step 2 is answered): "Perfect! I have captured all the delicious details: [FULL RECAP OF ORDER]. Our baker will review these details and contact you at [PHONE NUMBER] within 24 hours to confirm the final quote and collect the deposit. Is there anything else I can help you with today?"
         `;
-
         // --- Core Logic (API & Flow Handling) ---
 
         let isInOrderFlow = false;
         let orderStep = 0;
         let customOrderDetails = {};
 
-        function handleCustomOrderFlow(userMessage) {
+        async function handleCustomOrderFlow(userMessage) {
             if (userMessage.toLowerCase().includes('cancel') || userMessage.toLowerCase().includes('stop')) {
                 isInOrderFlow = false;
                 orderStep = 0;
@@ -178,19 +239,42 @@
             }
 
             if (orderStep === 1) {
-                customOrderDetails.step1 = userMessage;
+                customOrderDetails.contact_info = userMessage;
                 orderStep = 2;
                 const recap = userMessage.length > 50 ? userMessage.substring(0, 50) + '...' : userMessage;
                 return `Thank you! I see you need: "${recap}". I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)`;
             } else if (orderStep === 2) {
-                customOrderDetails.step2 = userMessage;
+                customOrderDetails.details_and_location = userMessage;
                 orderStep = 3;
-                const phoneNumMatch = customOrderDetails.step1.match(/\d{3}[-.\s]?\d{3}[-.\s]?\d{4}/);
+                
+                // FINAL STEP: Save to Firestore
+                if (isAuthReady) {
+                    try {
+                        const newOrder = {
+                            date_created: new Date().toISOString(),
+                            user_id: userId,
+                            step1: customOrderDetails.contact_info,
+                            step2: customOrderDetails.details_and_location,
+                            status: "New Lead",
+                        };
+                        
+                        await addDoc(collection(db, getPrivateOrderCollectionPath()), newOrder);
+                        console.log("Order saved to Firestore successfully:", newOrder);
+                    } catch (e) {
+                        console.error("Error saving order to Firestore:", e);
+                        return `<div class="error-message">Database Error: Order was captured, but failed to save to our system. Please call (407) 799-0341 to ensure your order is placed.</div>`;
+                    }
+                } else {
+                    console.warn("Firestore not ready, order not saved.");
+                }
+
+                const phoneNumMatch = customOrderDetails.contact_info.match(/\d{3}[-.\s]?\d{3}[-.\s]?\d{4}/);
                 const phoneNum = phoneNumMatch ? phoneNumMatch[0] : '(407) 799-0341';
-                const recap = `Date/Time/Item: ${customOrderDetails.step1.substring(0, 30)}... | Flavor/Address: ${customOrderDetails.step2.substring(0, 30)}...`;
+                const recap = `Contact: ${customOrderDetails.contact_info.substring(0, 30)}... | Details: ${customOrderDetails.details_and_location.substring(0, 30)}...`;
 
                 isInOrderFlow = false;
                 orderStep = 0;
+                customOrderDetails = {};
                 return `Perfect! I have captured all the delicious details: ${recap}. Our baker will review these details and contact you at ${phoneNum} within 24 hours to confirm the final quote and collect the deposit. Is there anything else I can help you with today?`;
             }
 
@@ -202,12 +286,11 @@
         async function getGeminiResponse(userQuery) {
             if (!userQuery) return "I need a message to get started! Ask me about flavors, delivery, or custom orders.";
 
+            // Check for order flow keywords and process if necessary
             if (isInOrderFlow || userQuery.toLowerCase().includes('custom order') || userQuery.toLowerCase().includes('place order') || userQuery.toLowerCase().includes('start order')) {
-                return handleCustomOrderFlow(userQuery);
+                return await handleCustomOrderFlow(userQuery);
             }
             
-            // CRITICAL CHECK: Key is present. No need to check for placeholder.
-
             const fullQuery = `
                 KNOWLEDGE BASE:\n---\n${knowledgeBase}\n---\n
                 USER QUERY: ${userQuery}
@@ -218,8 +301,7 @@
                 systemInstruction: { parts: [{ text: systemPrompt }] },
             };
 
-            // *** IMPORTANT FIX: Switched to standard gemini-2.5-flash endpoint ***
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+            const apiUrl = `${API_URL_BASE}?key=${API_KEY}`;
 
             let response;
             let retries = 0;
@@ -233,14 +315,12 @@
                         body: JSON.stringify(payload)
                     });
 
-                    // CRITICAL CHECK 2: Check for specific rejection status codes
                     if (!response.ok) {
                         const status = response.status;
                         const errorBody = await response.text();
                         console.error(`API Error Status: ${status}. Body: ${errorBody}`);
 
                         if (status === 400 || status === 403) {
-                            // 400/403 often means invalid key, disabled key, or usage limits
                             return `<div class="error-message">
                                     FATAL API ERROR (Code ${status}): Sprinkles can't talk! This means the key is likely invalid or restricted. Please double-check your API Key in the Google AI Studio settings.
                                     </div>`;
@@ -274,7 +354,7 @@
             messageElement.className = sender === 'user' ? 'user-message' : 'bot-message';
             // Use innerHTML to allow the error-message div to render
             messageElement.innerHTML = `
-                <div class="${text.includes('FATAL API ERROR') || text.includes('CRITICAL ERROR') ? 'error-message max-w-lg' : 'p-3 rounded-xl shadow-md max-w-xs md:max-w-md bg-white text-gray-700'} ${sender === 'user' ? 'bg-indigo-100 text-indigo-800 ml-auto' : ''}">
+                <div class="${text.includes('FATAL API ERROR') || text.includes('CRITICAL ERROR') || text.includes('Database Error') ? 'error-message max-w-lg' : 'p-3 rounded-xl shadow-md max-w-xs md:max-w-md bg-white text-gray-700'} ${sender === 'user' ? 'bg-indigo-100 text-indigo-800 ml-auto' : ''}">
                     ${text.replace(/\n/g, '<br>')}
                 </div>
                 <small class="text-xs text-gray-400 mt-1 block ${sender === 'user' ? 'text-right' : 'text-left'}">${sender === 'user' ? 'You' : 'Sprinkles'}</small>
