@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>K's Kupcakes Chatbot</title>
+    <!-- 
+        NOTE ON SECURITY & PERFORMANCE FEEDBACK:
+        Most issues reported (Content-Type, Cache-Control, X-Content-Type-Options, 
+        X-XSS-Protection, X-Runtime, X-Frame-Options) are server-side configurations. 
+        These cannot be modified from within this HTML file.
+    -->
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Use Inter font -->
@@ -94,6 +100,8 @@
                 <input 
                     type="text" 
                     id="user-input" 
+                    name="message" <!-- ADDED name attribute for form element -->
+                    aria-label="Chat message input" <!-- ADDED for accessibility/labeling fix -->
                     placeholder="Ask about pricing, delivery, or type 'start a custom order'..."
                     class="flex-grow p-3 border border-gray-300 rounded-full focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition duration-150"
                     autocomplete="off"
@@ -107,8 +115,8 @@
                     </svg>
                 </button>
             </div>
-            <!-- UPDATED: Less alarming loading message -->
-            <div id="status-message" class="text-xs mt-2 text-center text-gray-500">Loading Sprinkles...</div>
+            <!-- Status message element -->
+            <div id="status-message" class="text-xs mt-2 text-center text-gray-500 transition-colors duration-300">Loading Sprinkles...</div>
         </footer>
     </div>
 
@@ -131,6 +139,28 @@
 
         setLogLevel('debug'); // Enable detailed Firebase logs
 
+        // --- UI Functions (Defined early to be used immediately) ---
+        function appendMessage(sender, text) {
+            const chatbox = document.getElementById('chat-messages');
+            if (!chatbox) return; // Guard clause if DOM isn't fully ready yet
+
+            const messageElement = document.createElement('div');
+            messageElement.className = sender === 'user' ? 'user-message' : 'bot-message';
+            // Use innerHTML to allow the error-message div to render
+            messageElement.innerHTML = `
+                <div class="${text.includes('FATAL API ERROR') || text.includes('CRITICAL ERROR') || text.includes('Database Error') ? 'error-message max-w-lg' : 'p-3 rounded-xl shadow-md max-w-xs md:max-w-md bg-white text-gray-700'} ${sender === 'user' ? 'bg-indigo-100 text-indigo-800 ml-auto' : ''}">
+                    ${text.replace(/\n/g, '<br>')}
+                </div>
+                <small class="text-xs text-gray-400 mt-1 block ${sender === 'user' ? 'text-right' : 'text-left'}">${sender === 'user' ? 'You' : 'Sprinkles'}</small>
+            `;
+            chatbox.appendChild(messageElement);
+            chatbox.scrollTop = chatbox.scrollHeight;
+        }
+
+        // --- FIX: Display the initial greeting immediately before any async setup ---
+        appendMessage('bot', `Hello! I'm Sprinkles, your virtual baker and assistant for K's Kupcakes. How can I help you whip up the perfect order today? (Try asking about delivery, pricing, or "start a custom order"!)`);
+
+
         // 1. Initialize Firebase App
         const app = initializeApp(firebaseConfig);
         db = getFirestore(app);
@@ -152,18 +182,25 @@
                 userId = user.uid;
                 isAuthReady = true;
                 console.log("Firebase Auth Ready. User ID:", userId);
-                statusElement.textContent = `Database connected. User: ${userId.substring(0, 8)}...`;
-                statusElement.classList.remove('text-gray-500');
-                statusElement.classList.add('text-green-600');
+                
+                // Update status visual on success
+                if (statusElement) {
+                    statusElement.textContent = `Database connected. User: ${userId.substring(0, 8)}...`;
+                    statusElement.classList.remove('text-gray-500', 'text-red-600');
+                    statusElement.classList.add('text-green-600');
+                }
             } else {
                 // If not signed in via token, sign in anonymously
                 try {
                     await signInAnonymously(auth);
                 } catch (error) {
                     console.error("Anonymous Sign-in failed:", error);
-                    statusElement.textContent = 'Database connection failed.';
-                    statusElement.classList.remove('text-gray-500');
-                    statusElement.classList.add('text-red-600');
+                    // Update status visual on failure
+                    if (statusElement) {
+                        statusElement.textContent = 'Database connection failed.';
+                        statusElement.classList.remove('text-gray-500', 'text-green-600');
+                        statusElement.classList.add('text-red-600');
+                    }
                 }
             }
         });
@@ -179,8 +216,7 @@
         }
 
         // --- Chatbot Configuration ---
-        const APP_NAME = "K's Kupcakes";
-        // API Key is already inserted from the previous step.
+        // !!! IMPORTANT: THIS KEY MUST BE REPLACED WITH YOUR ACTUAL GOOGLE AI STUDIO KEY !!!
         const API_KEY = "AIzaSyDqZi2PHfuNciyv8Rsj8budM2I8t5HhC9g"; 
         const API_URL_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
@@ -353,22 +389,6 @@
             return "Oops! I seem to have mixed up the ingredients. Please try your question again, or call our baker directly at (407) 799-0341!";
         }
 
-        // --- UI Functions ---
-        function appendMessage(sender, text) {
-            const chatbox = document.getElementById('chat-messages');
-            const messageElement = document.createElement('div');
-            messageElement.className = sender === 'user' ? 'user-message' : 'bot-message';
-            // Use innerHTML to allow the error-message div to render
-            messageElement.innerHTML = `
-                <div class="${text.includes('FATAL API ERROR') || text.includes('CRITICAL ERROR') || text.includes('Database Error') ? 'error-message max-w-lg' : 'p-3 rounded-xl shadow-md max-w-xs md:max-w-md bg-white text-gray-700'} ${sender === 'user' ? 'bg-indigo-100 text-indigo-800 ml-auto' : ''}">
-                    ${text.replace(/\n/g, '<br>')}
-                </div>
-                <small class="text-xs text-gray-400 mt-1 block ${sender === 'user' ? 'text-right' : 'text-left'}">${sender === 'user' ? 'You' : 'Sprinkles'}</small>
-            `;
-            chatbox.appendChild(messageElement);
-            chatbox.scrollTop = chatbox.scrollHeight;
-        }
-
         async function sendMessage() {
             const inputElement = document.getElementById('user-input');
             const message = inputElement.value.trim();
@@ -389,7 +409,7 @@
             document.getElementById('send-button').disabled = false;
         }
 
-        // --- Fix: Use DOMContentLoaded for immediate interaction ---
+        // --- Event Listeners (DOM Ready) ---
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('send-button').addEventListener('click', sendMessage);
             document.getElementById('user-input').addEventListener('keypress', (e) => {
@@ -397,9 +417,6 @@
                     sendMessage();
                 }
             });
-
-            // Display the initial greeting immediately once the DOM is ready.
-            appendMessage('bot', `Hello! I'm Sprinkles, your virtual baker and assistant for K's Kupcakes. How can I help you whip up the perfect order today? (Try asking about delivery, pricing, or "start a custom order"!)`);
         });
     </script>
 </body>
