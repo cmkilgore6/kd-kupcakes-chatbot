@@ -1,2 +1,2 @@
-# kd-kupcakes-chatbot
+# ks-kupcakes-chatbot
 Ai Assistant for K's Kupcakes
