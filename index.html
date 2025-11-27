@@ -3,294 +3,670 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>K's Kupcakes Admin Dashboard</title>
-    <!-- Load Tailwind CSS -->
+    <title>The Sugar Sprinkle Spot AI</title>
+    <!-- Load Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>
-        body { 
-            font-family: 'Inter', sans-serif; 
-            background-color: #f7f9fb; 
-            min-height: 100vh;
-            margin: 0;
-            padding: 20px;
-        }
-        .lead-card {
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        .lead-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        }
-    </style>
-</head>
-<body>
-
-    <div class="max-w-4xl mx-auto bg-white p-6 rounded-xl shadow-2xl">
-        <h1 class="text-4xl font-extrabold mb-2 text-center text-rose-700">
-            🧁 Lead Management Dashboard
-        </h1>
-        <p class="text-center text-gray-500 mb-6 border-b pb-4">
-            Real-time custom order requests from Sprinkles Chatbot.
-        </p>
-
-        <!-- Loading/Error Indicator -->
-        <div id="status-message" class="mb-4 p-3 bg-blue-100 text-blue-800 rounded-lg text-sm" role="alert">
-            Connecting to database...
-        </div>
-        
-        <!-- Permanent Error Warning Block (Only hidden on successful data load) -->
-        <div id="security-warning" class="hidden">
-            <div class="p-6 my-4 bg-red-900 text-white rounded-xl shadow-xl border-4 border-red-500">
-                <h3 class="text-2xl font-bold mb-3">🛑 CRITICAL: PERMISSIONS BLOCKING DATA</h3>
-                <p class="mb-4">The code is running correctly, but your **Firebase Security Rules are blocking access**.</p>
-                <p class="font-semibold mb-2">To fix this, you MUST:</p>
-                <ol class="list-decimal list-inside space-y-1 ml-4">
-                    <li>Go to your **Firebase Console**.</li>
-                    <li>Navigate to **Firestore Database** > **Rules**.</li>
-                    <li>Ensure the following rule is present for the public data path:</li>
-                </ol>
-                <pre class="bg-black/40 p-3 mt-3 rounded-lg text-sm select-all">
-match /artifacts/{appId}/public/data/orders/{orderId} {
-  allow read, create, update: if request.auth != null;
-  allow delete: if false; 
-}</pre>
-                <p class="mt-4 text-yellow-300 font-bold">4. Click the blue **PUBLISH** button in the Firebase Rules tab.</p>
-                <p class="text-xs mt-2">The Dashboard will load immediately after the rules are published.</p>
-            </div>
-        </div>
-
-        <!-- Leads Container -->
-        <div id="leads-container" class="space-y-4 hidden">
-            <!-- Lead cards will be dynamically inserted here -->
-            <p id="no-leads" class="text-center text-gray-400 p-8 hidden">
-                🎉 All leads processed! Go bake some dreams!
-            </p>
-        </div>
-    </div>
-
+    <!-- Load Firebase SDKs -->
     <script type="module">
-        // --- FIREBASE SETUP ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, onSnapshot, doc, updateDoc, serverTimestamp, setDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // Enable debug logging for Firestore
-        setLogLevel('debug');
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, addDoc, onSnapshot, collection, query, serverTimestamp, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Use the global variables provided by the Canvas environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        // Global Firebase variables accessible to the main script
+        window.firebaseApp = null;
+        window.db = null;
+        window.auth = null;
+        window.userId = null;
+        window.isAuthReady = false;
 
-        // --- MANUAL CONFIGURATION REQUIRED FOR EXTERNAL DEPLOYMENT ---
-        // NOTE: These MUST match the values used in client_chatbot.html
-        const MANUAL_FIREBASE_CONFIG = {
-            apiKey: "AIzaSyA4DRHNH-ebn_z6zolcLLkZctTKD9HbPyY", 
-            authDomain: "kskupcakeleads.firebaseapp.com",
-            projectId: "kskupcakeleads",
-            storageBucket: "kskupcakeleads.firebasestorage.app",
-            messagingSenderId: "979562316466",
-            appId: "1:979562316466:web:7b07802098ec504623ffab" 
-        };
-        // --- END: MANUAL CONFIGURATION ---
+        // Initialize Firebase and Authentication
+        async function initializeFirebase() {
+            setLogLevel('debug'); // Enable logging for debugging
+            
+            // Access global variables provided by the environment
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        let firebaseConfig = MANUAL_FIREBASE_CONFIG;
-
-        // Check for Canvas environment configuration override
-        if (typeof __firebase_config !== 'undefined' && JSON.stringify(__firebase_config) !== '{}') {
-            firebaseConfig = JSON.parse(__firebase_config);
-        }
-
-        // Configuration check
-        if (!firebaseConfig || !firebaseConfig.apiKey) {
-            document.getElementById('status-message').className = 'mb-4 p-3 bg-red-100 text-red-800 rounded-lg text-sm block';
-            document.getElementById('status-message').textContent = 'Error: Firebase configuration is missing or incomplete. Cannot connect to the database.';
-            throw new Error("Firebase Configuration Incomplete.");
-        }
-
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-        
-        const statusMessage = document.getElementById('status-message');
-        const leadsContainer = document.getElementById('leads-container');
-        const noLeadsMessage = document.getElementById('no-leads');
-        const securityWarning = document.getElementById('security-warning');
-        securityWarning.classList.remove('hidden'); 
-        leadsContainer.classList.add('hidden'); 
-
-        let isAuthReady = false;
-        let currentUserId = null;
-
-        /**
-         * Signs in the user anonymously if no custom token is provided.
-         */
-        async function authenticate() {
-             statusMessage.classList.remove('hidden');
-             statusMessage.textContent = 'Authenticating...';
-             
-             try {
-                // The client chatbot is using Anonymous auth, so the dashboard should too.
-                await signInAnonymously(auth);
-             } catch (error) {
-                 console.error("Anonymous authentication failed:", error);
-                 statusMessage.className = 'mb-4 p-3 bg-red-100 text-red-800 rounded-lg text-sm block';
-                 statusMessage.textContent = `Authentication Error: ${error.message}. Ensure Anonymous Sign-in is enabled.`;
-                 isAuthReady = false;
-                 return;
-             }
-        }
-
-        /**
-         * Starts the real-time listener for the leads collection.
-         */
-        function startLeadListener() {
-            if (!isAuthReady) {
-                console.warn("Authentication not ready. Skipping lead listener start.");
+            if (!firebaseConfig) {
+                console.error("Firebase configuration is missing.");
+                document.getElementById('loading-state').textContent = 'Error: Firebase config missing.';
                 return;
             }
 
-            // Public data path: /artifacts/{appId}/public/data/orders
-            const collectionPath = `artifacts/${appId}/public/data/orders`; // The path being queried
-            console.log("Attempting to listen to collection:", collectionPath);
-            
-            const ordersCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
-            // Query to fetch all orders
-            const q = query(ordersCollectionRef);
+            try {
+                window.firebaseApp = initializeApp(firebaseConfig);
+                window.db = getFirestore(window.firebaseApp);
+                window.auth = getAuth(window.firebaseApp);
 
-            statusMessage.textContent = 'Listening for new leads...';
+                // Sign in with custom token if available, otherwise sign in anonymously
+                if (initialAuthToken) {
+                    await signInWithCustomToken(window.auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(window.auth);
+                }
 
-            // Real-time listener
-            onSnapshot(q, (snapshot) => {
-                let leads = [];
+                // Listen for Auth state changes
+                onAuthStateChanged(window.auth, (user) => {
+                    if (user) {
+                        window.userId = user.uid;
+                        document.getElementById('user-id-display').textContent = `User ID: ${window.userId}`;
+                        console.log("User signed in with UID:", window.userId);
+                    } else {
+                        // This case should ideally not happen after initial sign-in
+                        window.userId = crypto.randomUUID(); // Fallback to a random ID
+                        document.getElementById('user-id-display').textContent = `User ID (Anon): ${window.userId}`;
+                        console.log("User signed in anonymously (or signed out).");
+                    }
+                    window.isAuthReady = true;
+                    // Start dashboard listener once auth is ready (Only necessary for the admin/developer)
+                    if (window.userId && window.startDashboardListener) {
+                        window.startDashboardListener(appId, window.userId);
+                    }
+                    // Hide loading state
+                    document.getElementById('loading-state').classList.add('hidden');
+                });
+
+            } catch (error) {
+                console.error("Firebase initialization or sign-in failed:", error);
+                document.getElementById('loading-state').textContent = `Auth Error: ${error.message}`;
+            }
+        }
+
+        initializeFirebase();
+
+        // Expose necessary Firestore functions globally for the main script
+        window.firestore = {
+            doc, addDoc, onSnapshot, collection, query, serverTimestamp, setDoc, deleteDoc
+        };
+
+        // Function to save the order lead to Firestore
+        window.saveOrderLead = async (orderDetails) => {
+            if (!window.db || !window.userId) {
+                console.error("Database or User ID not ready.");
+                return false;
+            }
+
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            // IMPORTANT: For simplicity in this non-auth example, we save orders under the current user's private path.
+            // In a real app, K Cupcakes would have a static admin ID and customers would save to a shared public collection.
+            // Since K Cupcakes is the only one who can read THEIR user path, this is currently safe.
+            const collectionPath = `/artifacts/${appId}/users/${window.userId}/orders`;
+
+            try {
+                const docRef = await addDoc(window.firestore.collection(window.db, collectionPath), {
+                    ...orderDetails,
+                    status: 'New Lead', // Initial status
+                    timestamp: window.firestore.serverTimestamp() // Firestore timestamp
+                });
+                console.log("Order Lead saved successfully:", docRef.id);
+                return true;
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                // Fallback to a message box instead of alert
+                document.getElementById('message-modal-text').textContent = "Failed to save lead. Please check console for details.";
+                document.getElementById('message-modal').classList.remove('hidden');
+                return false;
+            }
+        };
+
+        // Function to update the order status
+        window.updateOrderStatus = async (docId, newStatus) => {
+            if (!window.db || !window.userId) {
+                console.error("Database or User ID not ready for update.");
+                return;
+            }
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const docPath = `/artifacts/${appId}/users/${window.userId}/orders/${docId}`;
+
+            try {
+                const docRef = window.firestore.doc(window.db, docPath);
+                await window.firestore.updateDoc(docRef, {
+                    status: newStatus,
+                    updatedAt: window.firestore.serverTimestamp()
+                });
+                console.log(`Order ${docId} updated to status: ${newStatus}`);
+            } catch (e) {
+                console.error("Error updating document: ", e);
+                document.getElementById('message-modal-text').textContent = `Failed to update status for ${docId}. Error: ${e.message}`;
+                document.getElementById('message-modal').classList.remove('hidden');
+            }
+        };
+
+        // Function to delete an order
+        window.deleteOrder = async (docId) => {
+            if (!window.db || !window.userId) {
+                console.error("Database or User ID not ready for deletion.");
+                return;
+            }
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const docPath = `/artifacts/${appId}/users/${window.userId}/orders/${docId}`;
+
+            try {
+                const docRef = window.firestore.doc(window.db, docPath);
+                await window.firestore.deleteDoc(docRef);
+                console.log(`Order ${docId} deleted successfully.`);
+            } catch (e) {
+                console.error("Error deleting document: ", e);
+                document.getElementById('message-modal-text').textContent = `Failed to delete order ${docId}. Error: ${e.message}`;
+                document.getElementById('message-modal').classList.remove('hidden');
+            }
+        };
+
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f7f9;
+        }
+        /* Custom styles for the Chatbot UI */
+        #chat-messages {
+            height: 70vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            padding: 1rem;
+            background-color: #fefefe;
+            border-radius: 0.5rem;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        .user-message, .bot-message {
+            display: flex;
+            flex-direction: column;
+        }
+        .user-message {
+            align-items: flex-end;
+        }
+        .bot-message {
+            align-items: flex-start;
+        }
+        .status-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .status-NewLead { background-color: #fef3c7; color: #a16207; } /* Amber */
+        .status-InContact { background-color: #dbeafe; color: #1e40af; } /* Blue */
+        .status-Completed { background-color: #d1fae5; color: #065f46; } /* Green */
+        .status-Canceled { background-color: #fee2e2; color: #991b1b; } /* Red */
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <!-- Message Modal (for alerts instead of window.alert) -->
+    <div id="message-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
+            <h3 class="text-xl font-bold text-gray-800 mb-4">Notification</h3>
+            <p id="message-modal-text" class="text-gray-600 mb-6"></p>
+            <button onclick="document.getElementById('message-modal').classList.add('hidden')" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-lg transition duration-150">Close</button>
+        </div>
+    </div>
+
+
+    <!-- Header & Navigation -->
+    <header class="mb-6 bg-white p-4 rounded-xl shadow-lg flex flex-col sm:flex-row justify-between items-center">
+        <h1 class="text-3xl font-extrabold text-pink-600 tracking-tight">The Sugar Sprinkle Spot AI</h1>
+        <!-- Admin Mode Toggle Button (Hidden by default, shown if ?admin=true is in URL) -->
+        <div id="admin-mode-container" class="mt-3 sm:mt-0 hidden">
+            <button id="mode-toggle-button" 
+                    class="px-4 py-2 rounded-full font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition duration-150 shadow-md">
+                Switch to Admin Mode
+            </button>
+        </div>
+    </header>
+
+    <!-- Authentication Loading State -->
+    <div id="loading-state" class="text-center p-8 bg-yellow-100 text-yellow-800 rounded-xl shadow-md mb-6">
+        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 inline-block text-yellow-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        Initializing Firebase and Authenticating...
+    </div>
+
+    <!-- User ID Display (Visible only to developers) -->
+    <div id="user-id-display" class="text-sm text-gray-500 mb-4 text-center"></div>
+
+    <!-- MAIN CONTENT AREA -->
+    <main class="max-w-7xl mx-auto">
+
+        <!-- 1. CHATBOT VIEW -->
+        <div id="chatbot-view" class="bg-white p-6 rounded-xl shadow-2xl transition duration-300">
+            <h2 class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2">Sprinkles - Virtual Assistant</h2>
+            <div id="chat-messages" class="mb-4">
+                <!-- Messages will be appended here -->
+            </div>
+            <div id="typing-indicator" class="bot-message mb-4 hidden">
+                <div class="p-3 bg-white text-gray-700 rounded-xl shadow-md max-w-xs md:max-w-md">
+                    <span class="animate-pulse">Sprinkles is typing...</span>
+                </div>
+            </div>
+            <div class="flex">
+                <input type="text" id="user-input" placeholder="Ask about hours, delivery, or start a custom order..."
+                       class="flex-grow p-3 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <button id="send-button"
+                        class="px-6 py-3 bg-pink-500 text-white font-semibold rounded-r-lg hover:bg-pink-600 transition duration-150 disabled:bg-gray-400">
+                    Send
+                </button>
+            </div>
+        </div>
+
+        <!-- 2. ADMIN DASHBOARD VIEW -->
+        <div id="dashboard-view" class="bg-white p-6 rounded-xl shadow-2xl hidden transition duration-300">
+            <h2 class="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">Admin Dashboard: New Order Leads</h2>
+            <div id="lead-list" class="space-y-4">
+                <p id="no-leads" class="text-gray-500 text-center p-10 hidden">No new leads yet. Time to get some orders!</p>
+                <!-- Leads will be dynamically inserted here -->
+            </div>
+        </div>
+
+    </main>
+
+    <!-- ****************************************************** -->
+    <!-- JAVASCRIPT LOGIC (Chatbot, Dashboard, and UI Toggles) -->
+    <!-- ****************************************************** -->
+    <script type="module">
+        // Import Firestore functions from global window object
+        const { doc, addDoc, onSnapshot, collection, query, serverTimestamp, setDoc, deleteDoc } = window.firestore;
+        const saveOrderLead = window.saveOrderLead;
+        const updateOrderStatus = window.updateOrderStatus;
+        const deleteOrder = window.deleteOrder;
+
+        // --- CHATBOT CONFIGURATION --- (Based on chatbot_config.js)
+        const API_KEY = ""; // Canvas provides this at runtime.
+
+        const knowledgeBase = `
+        # The Sugar Sprinkle Spot - AI Knowledge Base
+        
+        ## 1. Business Identity and Location (MUST BE ACCURATE)
+        * Q: What is the official name of the shop? A: The Sugar Sprinkle Spot.
+        * Q: What is the physical address/location? A: We are a home-based business and do not have a public storefront. All orders are for local meetup/pickup or delivery only.
+        * Q: What is the best phone number to call? A: (407) 799-0341.
+        * Q: What are your hours of operation? A: Inquiries are accepted 24/7 via social media or voicemail. Fulfillment (delivery and local pickup scheduling) is generally handled during these windows: Monday-Friday, 5:00 PM - 9:00 PM, and Saturday 10:00 AM - 2:00 PM.
+        * Q: Do you have a website? A: No, we operate solely through social media platforms (please search for "The Sugar Sprinkle Spot").
+        
+        ## 2. Menu and Product Details
+        * Q: What are your four most popular cupcake flavors and their price? A: We are a made-to-order bakery! We do not keep standard stock flavors. The customer chooses their preferred flavor, filling, and frosting. Please tell me what flavor you are interested in!
+        * Q: What is the price of a standard dozen cupcakes? A: Our bulk order pricing is:
+            * 1 Dozen: $30
+            * 2 Dozen: $35
+            * 3 Dozen: $40
+            * 4 Dozen: $45
+        * Q: Do you offer custom cakes? A: Yes! We specialize in custom cakes. All custom cake inquiries require 48 hours notice. Please ask me to start a custom order request!
+        * Q: Do you offer seasonal flavors? A: Yes, our current seasonal flavor is Pumpkin.
+        
+        ## 3. Policy and Logistics
+        * Q: What is your policy on allergies and cross-contamination? A: We do offer Gluten-Free options. HOWEVER, as we are a home kitchen, there is a possibility of cross-contamination with common allergens, including nuts and gluten. We cannot guarantee a certified allergen-free product.
+        * Q: What is your minimum required deposit? A: A deposit of 1/2 down (50%) is required at the time of booking for all orders.
+        * Q: What is the rush order fee? A: There is a minimum $25 fee for rush orders.
+        * Q: Do you offer delivery? A: Yes, we offer delivery up to a 100-mile max radius.
+        * Q: What is the delivery fee? A: The delivery fee is determined dynamically based on location. For local (in-town) meetups, delivery is often complimentary. For distances requiring travel, the fee will be calculated upon checkout.
+        * Q: How far in advance do I need to place a large order (2+ dozen)? A: We require 48 hours notice for large orders.
+        * Q: Do you accept corporate orders or catering? A: Yes! For large events or catering, please ask me to start a custom order request so we can provide a personalized quote.
+        `;
+
+        // --- CHATBOT STATE ---
+        const chatHistory = [];
+        let isInOrderFlow = false;
+        let orderStep = 0;
+        let customOrderDetails = {
+            step1: null,
+            step2: null,
+            name: null,
+            phone: null,
+            type: null,
+            date: null,
+        };
+        let currentMode = 'chatbot'; // Tracks whether the admin is viewing 'chatbot' or 'dashboard'
+
+        // --- CHATBOT UI HELPERS ---
+        function appendMessage(sender, text) {
+            const chatbox = document.getElementById('chat-messages');
+            const messageElement = document.createElement('div');
+            messageElement.className = sender === 'user' ? 'user-message' : 'bot-message';
+            messageElement.innerHTML = `
+                <div class="p-3 rounded-xl shadow-md max-w-xs md:max-w-md ${sender === 'user' ? 'bg-indigo-100 text-indigo-800 ml-auto' : 'bg-white text-gray-700'}">
+                    ${text.replace(/\n/g, '<br>')}
+                </div>
+                <small class="text-xs text-gray-400 mt-1 block ${sender === 'user' ? 'text-right' : 'text-left'}">${sender === 'user' ? 'You' : 'Sprinkles'}</small>
+            `;
+            chatbox.appendChild(messageElement);
+            chatbox.scrollTop = chatbox.scrollHeight; // Auto-scroll to latest message
+        }
+
+        // --- CHATBOT ORDER FLOW LOGIC ---
+        function extractDetails(message) {
+            // Very simple regex for phone numbers for demo purposes
+            const phoneMatch = message.match(/\d{3}[-.\s]?\d{3}[-.\s]?\d{4}/);
+            const phone = phoneMatch ? phoneMatch[0] : 'N/A';
+
+            // Extract Name (simple heuristic: first word before a comma/date or the first capitalized word)
+            let name = message.split(/,|\s{2,}|\d{4}/)[0].trim();
+            if (name.toLowerCase().includes('need') || name.toLowerCase().includes('date')) {
+                name = 'N/A';
+            }
+
+            // Extract Date (simple heuristic for common formats)
+            const dateMatch = message.match(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b|\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:,\s*\d{4})?\b/i);
+            const date = dateMatch ? dateMatch[0] : 'N/A';
+
+            return { name, phone, date };
+        }
+
+        async function handleCustomOrderFlow(userMessage) {
+            const lowerMessage = userMessage.toLowerCase();
+            // If the user tries to exit the flow
+            if (lowerMessage.includes('cancel') || lowerMessage.includes('stop')) {
+                isInOrderFlow = false;
+                orderStep = 0;
+                customOrderDetails = {};
+                return "Order flow canceled. Feel free to ask any other questions about The Sugar Sprinkle Spot!";
+            }
+
+            if (orderStep === 1) {
+                // Collect Date, Time, Type, Name, Phone Number (Step 1)
+                customOrderDetails.step1 = userMessage;
+
+                const details = extractDetails(userMessage);
+                customOrderDetails.name = details.name;
+                customOrderDetails.phone = details.phone;
+                customOrderDetails.date = details.date;
+                customOrderDetails.type = userMessage.length > 50 ? userMessage.substring(0, 50) + '...' : userMessage;
+
+                orderStep = 2;
+
+                const recap = `${customOrderDetails.type} for ${customOrderDetails.date}.`;
+
+                return `Thank you! I see you need ${recap} I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)`;
+
+            } else if (orderStep === 2) {
+                // Collect Flavor/Theme/Allergies and Delivery Address (Step 2)
+                customOrderDetails.step2 = userMessage;
+
+                // Finalize order object
+                const finalOrder = {
+                    customerName: customOrderDetails.name,
+                    contactPhone: customOrderDetails.phone,
+                    eventDate: customOrderDetails.date,
+                    orderType: customOrderDetails.type,
+                    flavorTheme: userMessage, // Contains flavor, theme, address info
+                };
+
+                // Save to Firestore and finish the flow
+                const saveSuccess = await saveOrderLead(finalOrder);
+
+                isInOrderFlow = false;
+                orderStep = 0;
+
+                if (saveSuccess) {
+                    const phoneNum = finalOrder.contactPhone || '(407) 799-0341';
+                    return `Perfect! I have captured all the delicious details. Our baker will review these details and contact you at ${phoneNum} within 24 hours to confirm the final quote and collect the deposit. Is there anything else I can help you with today?`;
+                } else {
+                    return "I hit a snag saving your order details. Please call us directly at (407) 799-0341 to ensure your order is placed!";
+                }
+            }
+
+            // Initialize flow if not started
+            orderStep = 1;
+            isInOrderFlow = true;
+            const systemPrompt = `
+                You are 'Sprinkles', the virtual baker and assistant for The Sugar Sprinkle Spot, a made-to-order, home-based bakery.
+                Your primary directive is to answer customer questions using ONLY the provided knowledge base (KB).
+                If a question cannot be answered with the KB, politely state that you do not have that information and provide the shop's phone number ((407) 799-0341) for human assistance.
+
+                Persona Rules:
+                1. Tone: Cheerful, friendly, and professional. Use light baking metaphors (e.g., "Let's whip up an answer," "That's the icing on the cake!").
+                2. Focus: Emphasize that the bakery is made-to-order (customers choose the flavor) and home-based (no public storefront).
+                3. Lead Qualification: If the user explicitly asks to "start a custom order," "place a large order," or "ask about a cake," immediately trigger the "CUSTOM_ORDER_FLOW" by starting the conversation with Step 1 of the Lead Qualification Script. Do not answer other questions until the flow is complete or canceled.
+
+                Lead Qualification Script (CUSTOM_ORDER_FLOW):
+                Step 1: "I'd be happy to start that for you! To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back?"
+                Step 2 (After Step 1 is answered): "Thank you! I see you need [RECAP DETAILS]. I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)"
+                Step 3 (After Step 2 is answered): "Perfect! I have captured all the delicious details: [FULL RECAP OF ORDER]. Our baker will review these details and contact you at [PHONE NUMBER] within 24 hours to confirm the final quote and collect the deposit. Is there anything else I can help you with today?"
+                `;
+
+            // Extract the text of Step 1 from the system prompt. This is a bit brittle but works for this structure.
+            const match = systemPrompt.match(/Step 1: "(.*?)"/);
+            return match && match[1] ? match[1] : "I'd be happy to start that for you! Please tell me the Date and Time, Type of item, and your Name and Phone Number.";
+        }
+
+
+        // --- CHATBOT API INTERACTION ---
+        async function getGeminiResponse(userQuery) {
+            if (!userQuery) return "I need a message to get started! Ask me about flavors, delivery, or custom orders.";
+
+            // Check if the user is currently in the order flow or trying to start it
+            if (isInOrderFlow || userQuery.toLowerCase().includes('custom order') || userQuery.toLowerCase().includes('place order') || userQuery.toLowerCase().includes('start order')) {
+                return handleCustomOrderFlow(userQuery);
+            }
+
+            // Add user message to history (for standard chat)
+            chatHistory.push({ role: "user", parts: [{ text: userQuery + " based on the knowledge base." }] });
+
+            // Include the Knowledge Base content directly in the prompt for grounding
+            const fullQuery = `
+                KNOWLEDGE BASE:\n---\n${knowledgeBase}\n---\n
+                USER QUERY: ${userQuery}
+            `;
+
+            const geminiSystemPrompt = `
+                You are 'Sprinkles', the virtual baker and assistant for The Sugar Sprinkle Spot, a made-to-order, home-based bakery.
+                Your primary directive is to answer customer questions using ONLY the provided knowledge base.
+                If a question cannot be answered with the KB, politely state that you do not have that information and provide the shop's phone number ((407) 799-0341) for human assistance.
+                Tone: Cheerful, friendly, and professional. Use light baking metaphors.
+            `;
+
+            const payload = {
+                contents: [{ role: "user", parts: [{ text: fullQuery }] }],
+                systemInstruction: { parts: [{ text: geminiSystemPrompt }] },
+            };
+
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+
+            let response;
+            let retries = 0;
+            const MAX_RETRIES = 5;
+
+            while (retries < MAX_RETRIES) {
+                try {
+                    response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) {
+                        const result = await response.json();
+                        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (text) {
+                            chatHistory.push({ role: "model", parts: [{ text: text }] });
+                            return text;
+                        }
+                    }
+                } catch (error) {
+                    console.error(`Attempt ${retries + 1} failed:`, error);
+                }
+
+                retries++;
+                if (retries < MAX_RETRIES) {
+                    const delay = Math.pow(2, retries) * 1000; // Exponential backoff
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+
+            return "Oops! I seem to have mixed up the ingredients. Please try your question again, or call our baker directly at (407) 799-0341!";
+        }
+
+        // --- CHATBOT UI INTERACTION ---
+        async function sendMessage() {
+            const inputElement = document.getElementById('user-input');
+            const message = inputElement.value.trim();
+            if (message === '') return;
+
+            inputElement.value = '';
+            appendMessage('user', message);
+            document.getElementById('send-button').disabled = true;
+
+            // Show typing indicator
+            const typingIndicator = document.getElementById('typing-indicator');
+            typingIndicator.classList.remove('hidden');
+            typingIndicator.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+
+            // Get the response
+            const botResponse = await getGeminiResponse(message);
+
+            // Hide typing indicator and display response
+            typingIndicator.classList.add('hidden');
+            appendMessage('bot', botResponse);
+            document.getElementById('send-button').disabled = false;
+        }
+
+        // --- DASHBOARD UI & FIRESTORE LOGIC ---
+
+        function renderLeadCard(docId, lead) {
+            const timestamp = lead.timestamp ? new Date(lead.timestamp.seconds * 1000).toLocaleString() : 'N/A';
+            const statusColor = `status-${lead.status.replace(/\s/g, '')}`;
+
+            const card = document.createElement('div');
+            card.id = `lead-${docId}`;
+            card.className = "bg-gray-50 p-4 border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition duration-150";
+            card.innerHTML = `
+                <div class="flex justify-between items-start mb-3">
+                    <div>
+                        <span class="status-badge ${statusColor}">${lead.status}</span>
+                        <h3 class="text-xl font-bold text-pink-600 mt-1">${lead.customerName || 'No Name Provided'}</h3>
+                    </div>
+                    <small class="text-gray-500">${timestamp}</small>
+                </div>
+
+                <p class="text-gray-700 mb-2"><strong>Phone:</strong> ${lead.contactPhone || 'N/A'}</p>
+                <p class="text-gray-700 mb-2"><strong>Event Date:</strong> ${lead.eventDate || 'N/A'}</p>
+                <p class="text-gray-700 mb-4 text-sm bg-gray-100 p-2 rounded-md border border-gray-200">
+                    <strong>Details:</strong> ${lead.flavorTheme || lead.orderType || 'No additional details captured.'}
+                </p>
+
+                <div class="flex space-x-2 pt-2 border-t border-gray-100">
+                    <select id="status-select-${docId}" class="p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="New Lead" ${lead.status === 'New Lead' ? 'selected' : ''}>New Lead</option>
+                        <option value="In Contact" ${lead.status === 'In Contact' ? 'selected' : ''}>In Contact</option>
+                        <option value="Completed" ${lead.status === 'Completed' ? 'selected' : ''}>Completed (Paid)</option>
+                        <option value="Canceled" ${lead.status === 'Canceled' ? 'selected' : ''}>Canceled</option>
+                    </select>
+                    <button onclick="window.updateOrderStatus('${docId}', document.getElementById('status-select-${docId}').value)"
+                            class="p-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition duration-150 text-sm">
+                        Update
+                    </button>
+                    <button onclick="window.deleteOrder('${docId}')"
+                            class="p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-150 text-sm ml-auto">
+                        Delete
+                    </button>
+                </div>
+            `;
+            return card;
+        }
+
+        function startDashboardListener(appId, userId) {
+            const leadList = document.getElementById('lead-list');
+            const noLeadsMessage = document.getElementById('no-leads');
+
+            // NOTE: The dashboard only shows leads created by the current user session (for security simplicity).
+            const collectionPath = `/artifacts/${appId}/users/${userId}/orders`;
+            const leadsQuery = window.firestore.collection(window.db, collectionPath);
+
+            onSnapshot(leadsQuery, (snapshot) => {
+                const leads = [];
                 snapshot.forEach(doc => {
                     leads.push({ id: doc.id, ...doc.data() });
                 });
 
-                // HIDE ERROR MESSAGES ON SUCCESS
-                securityWarning.classList.add('hidden'); 
-                leadsContainer.classList.remove('hidden');
+                // Clear existing list items
+                leadList.innerHTML = '';
 
-                // In-memory sort: Newest leads first
-                leads.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-
-                renderLeads(leads);
+                if (leads.length === 0) {
+                    noLeadsMessage.classList.remove('hidden');
+                } else {
+                    noLeadsMessage.classList.add('hidden');
+                    // Sort leads by timestamp (newest first)
+                    leads.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+                    leads.forEach(lead => {
+                        leadList.appendChild(renderLeadCard(lead.id, lead));
+                    });
+                }
             }, (error) => {
                 console.error("Error listening to leads:", error);
-                // On permission error, display the strong warning and keep status message updated
-                securityWarning.classList.remove('hidden');
-                leadsContainer.classList.add('hidden');
-                statusMessage.className = 'mb-4 p-3 bg-yellow-100 text-yellow-800 rounded-lg text-sm block';
-                // Display the specific path that failed to help the user debug their rules
-                statusMessage.textContent = `ERROR: Database Connection Blocked. Check Security Rules (see critical warning below). Failed Path: ${collectionPath}`;
+                document.getElementById('message-modal-text').textContent = `Error loading dashboard data: ${error.message}`;
+                document.getElementById('message-modal').classList.remove('hidden');
             });
         }
 
-        /**
-         * Renders the lead cards in the UI.
-         * @param {Array} leads - Array of lead objects from Firestore.
-         */
-        function renderLeads(leads) {
-            leadsContainer.innerHTML = ''; // Clear existing leads
-            statusMessage.classList.add('hidden'); // Hide status once data is received
-            
-            // Filter for only 'New Lead' status to display in the main dashboard
-            const newLeads = leads.filter(lead => lead.status === 'New Lead');
+        // Expose listener function to global scope (called after auth is ready in Firebase module)
+        window.startDashboardListener = startDashboardListener;
 
-            if (newLeads.length === 0) {
-                noLeadsMessage.classList.remove('hidden');
-                return;
+        // --- UI MODE MANAGEMENT ---
+
+        function setMode(newMode) {
+            const chatbotView = document.getElementById('chatbot-view');
+            const dashboardView = document.getElementById('dashboard-view');
+            const modeToggleButton = document.getElementById('mode-toggle-button');
+
+            if (newMode === 'chatbot') {
+                chatbotView.classList.remove('hidden');
+                dashboardView.classList.add('hidden');
+                if (modeToggleButton) {
+                    modeToggleButton.textContent = 'Switch to Admin Mode';
+                }
             } else {
-                noLeadsMessage.classList.add('hidden');
+                chatbotView.classList.add('hidden');
+                dashboardView.classList.remove('hidden');
+                if (modeToggleButton) {
+                    modeToggleButton.textContent = 'Switch to Chatbot Mode';
+                }
             }
-
-            newLeads.forEach(lead => {
-                const date = lead.timestamp ? new Date(lead.timestamp.seconds * 1000).toLocaleString() : 'N/A';
-                const card = document.createElement('div');
-                card.className = `lead-card bg-white border border-gray-200 p-5 rounded-lg shadow-md flex justify-between items-start`;
-                
-                card.innerHTML = `
-                    <div class="flex-grow">
-                        <div class="flex justify-between items-center mb-2">
-                            <h2 class="text-xl font-bold text-rose-600">New Custom Order Request</h2>
-                            <span class="text-sm font-medium text-gray-500">${date}</span>
-                        </div>
-                        <p class="text-sm font-semibold text-gray-700 mt-1">
-                            <span class="font-normal text-gray-500">Step 1:</span> ${lead.step1_details || 'No details provided.'}
-                        </p>
-                        <p class="text-sm font-semibold text-gray-700 mt-1">
-                            <span class="font-normal text-gray-500">Step 2:</span> ${lead.step2_details || 'No details provided.'}
-                        </p>
-                        <small class="text-xs text-gray-400 mt-2 block">Client ID: ${lead.client_id || 'N/A'}</small>
-                    </div>
-                    <div class="ml-4 flex-shrink-0">
-                        <button data-lead-id="${lead.id}" 
-                                class="mark-contacted-btn bg-green-500 text-white font-semibold px-4 py-2 rounded-lg hover:bg-green-600 transition duration-150 shadow-md whitespace-nowrap">
-                            Mark Contacted
-                        </button>
-                    </div>
-                `;
-                leadsContainer.appendChild(card);
-            });
-
-            // Attach event listeners to the new buttons
-            document.querySelectorAll('.mark-contacted-btn').forEach(button => {
-                button.addEventListener('click', (e) => {
-                    const leadId = e.target.dataset.leadId;
-                    updateLeadStatus(leadId, 'Contacted');
-                });
-            });
+            currentMode = newMode;
         }
-
-        /**
-         * Updates the status of a lead document in Firestore.
-         * @param {string} leadId - The ID of the document to update.
-         * @param {string} newStatus - The new status (e.g., 'Contacted').
-         */
-        async function updateLeadStatus(leadId, newStatus) {
-            if (!isAuthReady) {
-                console.error("Cannot update lead: Authentication not complete.");
-                return;
-            }
-
-            const button = document.querySelector(`[data-lead-id="${leadId}"]`);
-            if (button) button.disabled = true;
-
-            try {
-                const leadRef = doc(db, 'artifacts', appId, 'public', 'data', 'orders', leadId);
-                await updateDoc(leadRef, {
-                    status: newStatus,
-                    contacted_by: currentUserId,
-                    contacted_at: serverTimestamp()
-                });
-                console.log(`Lead ${leadId} updated to ${newStatus}.`);
-            } catch (e) {
-                console.error("Error updating lead status (Permissions likely):", e);
-                // Simple error notification
-                const errorDiv = document.createElement('div');
-                errorDiv.className = 'p-2 mt-2 bg-red-100 text-red-800 rounded-md text-xs';
-                errorDiv.textContent = `Update Failed: ${e.code || e.message}. Did you publish the 'update' rule?`;
-                leadsContainer.prepend(errorDiv);
-                if (button) button.disabled = false;
-                setTimeout(() => errorDiv.remove(), 5000); // Remove after 5 seconds
-            }
-        }
-
-        // --- Main Execution ---
         
-        // Use onAuthStateChanged to ensure we only start listening AFTER authentication
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                currentUserId = user.uid;
-                isAuthReady = true;
-                statusMessage.className = 'mb-4 p-3 bg-green-100 text-green-800 rounded-lg text-sm block';
-                statusMessage.textContent = `Successfully connected as user: ${currentUserId}`;
-                console.log(`User is signed in. UID: ${currentUserId}`);
-                startLeadListener();
-            } else {
-                // User is signed out or initial check failed, attempt to sign in anonymously
-                authenticate();
+        function toggleMode() {
+            setMode(currentMode === 'chatbot' ? 'dashboard' : 'chatbot');
+        }
+
+        // --- INITIALIZATION ---
+
+        window.addEventListener('load', () => {
+            // Check for admin URL flag
+            const params = new URLSearchParams(window.location.search);
+            const isAdmin = params.get('admin') === 'true';
+
+            // Set initial mode
+            setMode('chatbot');
+            
+            // Attach listeners for the Chatbot input
+            document.getElementById('send-button').addEventListener('click', sendMessage);
+            document.getElementById('user-input').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            // ADMIN MODE LOGIC: Only show the toggle button if the URL flag is present
+            if (isAdmin) {
+                const adminContainer = document.getElementById('admin-mode-container');
+                const toggleButton = document.getElementById('mode-toggle-button');
+                adminContainer.classList.remove('hidden');
+                toggleButton.addEventListener('click', toggleMode);
+                
+                // Show a helpful message to the admin
+                console.warn("ADMIN MODE ENABLED: Toggle the view using the button in the header.");
             }
+
+            // Initial greeting for the Chatbot
+            setTimeout(() => {
+                appendMessage('bot', `Hello! I'm Sprinkles, your virtual baker and assistant for The Sugar Sprinkle Spot. How can I help you whip up the perfect order today? (Try asking about delivery, pricing, or "start a custom order"!)`);
+            }, 100);
         });
 
     </script>
