@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sprinkles: K's Kupcakes Assistant</title>
+    <title>K's Kupcakes Admin Dashboard</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
@@ -11,205 +11,79 @@
         body { 
             font-family: 'Inter', sans-serif; 
             background-color: #f7f9fb; 
-            display: flex;
-            justify-content: center;
-            align-items: center;
             min-height: 100vh;
             margin: 0;
-            text-size-adjust: 100%;
-            -webkit-text-size-adjust: 100%;
-            -moz-text-size-adjust: 100%;
-            -ms-text-size-adjust: 100%;
+            padding: 20px;
         }
-
-        /* --- Chatbot Specific Styles --- */
-        .chat-container { height: 50vh; min-height: 300px; max-height: 70vh; overflow-y: auto; display: flex; flex-direction: column; padding: 10px; background-color: #f9fafb; border-radius: 0.75rem; }
-        .user-message, .bot-message { margin-bottom: 10px; display: flex; flex-direction: column; max-width: 80%; }
-        .user-message { align-self: flex-end; align-items: flex-end; }
-        .bot-message { align-self: flex-start; align-items: flex-start; }
-        .typing-indicator { color: #6b7280; font-style: italic; margin-top: 5px; }
-
+        .lead-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .lead-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
     </style>
 </head>
 <body>
 
-    <div class="w-full max-w-lg bg-white p-6 rounded-xl shadow-2xl h-[80vh] flex flex-col">
-        <h1 class="text-3xl font-bold mb-4 text-center text-rose-600 border-b pb-3">
-            🧁 Sprinkles - Your Baker Assistant
+    <div class="max-w-4xl mx-auto bg-white p-6 rounded-xl shadow-2xl">
+        <h1 class="text-4xl font-extrabold mb-2 text-center text-rose-700">
+            🧁 Lead Management Dashboard
         </h1>
-        
-        <!-- Chat Messages Area -->
-        <div id="chat-messages" class="chat-container flex-grow mb-4 border border-gray-200">
-            <!-- Messages will be appended here -->
-        </div>
-        
-        <!-- Typing Indicator -->
-        <div id="typing-indicator" class="typing-indicator hidden mb-2">Sprinkles is typing...</div>
+        <p class="text-center text-gray-500 mb-6 border-b pb-4">
+            Real-time custom order requests from Sprinkles Chatbot.
+        </p>
 
-        <!-- Chat Input -->
-        <div class="flex">
-            <input type="text" id="user-input" placeholder="Ask about hours, delivery, or a custom order..."
-                   class="flex-grow p-3 border border-gray-300 rounded-l-lg focus:ring-rose-500 focus:border-rose-500 transition duration-150">
-            <button id="send-button"
-                    class="bg-rose-500 text-white font-semibold px-4 py-3 rounded-r-lg hover:bg-rose-600 transition duration-300">
-                Send
-            </button>
+        <!-- Loading/Error Indicator -->
+        <div id="status-message" class="mb-4 p-3 bg-blue-100 text-blue-800 rounded-lg text-sm" role="alert">
+            Connecting to database...
         </div>
-        <small class="mt-2 text-xs text-gray-500 text-center">
-            Ask about pricing or say "start a custom order"
-        </small>
+        
+        <!-- Permanent Error Warning Block (Only hidden on successful data load) -->
+        <div id="security-warning" class="hidden">
+            <div class="p-6 my-4 bg-red-900 text-white rounded-xl shadow-xl border-4 border-red-500">
+                <h3 class="text-2xl font-bold mb-3">🛑 CRITICAL: PERMISSIONS BLOCKING DATA</h3>
+                <p class="mb-4">The code is running correctly, but your **Firebase Security Rules are blocking access**.</p>
+                <p class="font-semibold mb-2">To fix this, you MUST:</p>
+                <ol class="list-decimal list-inside space-y-1 ml-4">
+                    <li>Go to your **Firebase Console**.</li>
+                    <li>Navigate to **Firestore Database** > **Rules**.</li>
+                    <li>Ensure the following rule is present for the public data path:</li>
+                </ol>
+                <pre class="bg-black/40 p-3 mt-3 rounded-lg text-sm select-all">
+match /artifacts/{appId}/public/data/orders/{orderId} {
+  allow read, create, update: if request.auth != null;
+  allow delete: if false; 
+}</pre>
+                <p class="mt-4 text-yellow-300 font-bold">4. Click the blue **PUBLISH** button in the Firebase Rules tab.</p>
+                <p class="text-xs mt-2">The Dashboard will load immediately after the rules are published.</p>
+            </div>
+        </div>
+
+        <!-- Leads Container -->
+        <div id="leads-container" class="space-y-4 hidden">
+            <!-- Lead cards will be dynamically inserted here -->
+            <p id="no-leads" class="text-center text-gray-400 p-8 hidden">
+                🎉 All leads processed! Go bake some dreams!
+            </p>
+        </div>
     </div>
 
-    <!-- AI Chatbot Logic (Copied from original file) -->
     <script type="module">
-        // The chatbot configuration logic is now bundled directly with the UI
-
-        const APP_NAME = "K's Kupcakes";
-        // The API Key is intentionally left blank. It will be provided by the runtime environment.
-        const API_KEY = ""; 
-
-        const knowledgeBase = `
-        // NOTE: This is the content of cupcake_kb.md used as grounding context for the AI.
-        // The AI must ONLY answer questions based on this knowledge.
-        
-        # K's Kupcakes - AI Knowledge Base
-        
-        ## 1. Business Identity and Location (MUST BE ACCURATE)
-        * Q: What is the official name of the shop? A: K's Kupcakes.
-        * Q: What is the physical address/location? A: We are a home-based business and do not have a public storefront. All orders are for local meetup/pickup or delivery only.
-        * Q: What is the best phone number to call? A: (407) 799-0341.
-        * Q: What are your hours of operation? A: Inquiries are accepted 24/7 via social media or voicemail. Fulfillment (delivery and local pickup scheduling) is scheduled directly with the customer.
-        * Q: Do you have a website? A: No, we operate solely through social media platforms (please search for "K's Kupcakes").
-        
-        ## 2. Menu and Product Details
-        * Q: What are your four most popular cupcake flavors and their price? A: We are a made-to-order bakery! We do not keep standard stock flavors. The customer chooses their preferred flavor, filling, and frosting. Please tell me what flavor you are interested in!
-        * Q: What is the price of a standard dozen cupcakes? A: Our bulk order pricing is:
-          * 1 Dozen: $30
-          * 2 Dozen: $35
-          * 3 Dozen: $40
-          * 4 Dozen: $45
-        * Q: Do you offer custom cakes? A: Yes! We specialize in custom cakes. All custom cake inquiries require 48 hours notice. Please ask me to start a custom order request!
-        * Q: Do you offer seasonal flavors? A: Yes, our current seasonal flavor is **Pumpkin**.
-        
-        ## 3. Policy and Logistics
-        * Q: What is your policy on allergies and cross-contamination? A: We do offer **Gluten-Free** options. HOWEVER, as we are a home kitchen, there is a possibility of cross-contamination with common allergens, including nuts and gluten. We cannot guarantee a certified allergen-free product.
-        * Q: What is your minimum required deposit? A: A deposit of **1/2 down (50%)** is required at the time of booking for all orders.
-        * Q: What is the rush order fee? A: There is a **minimum $25 fee** for rush orders.
-        * Q: Do you offer delivery? A: Yes, we offer delivery up to a **100-mile max radius**.
-        * Q: What is the delivery fee? A: The delivery fee is determined dynamically based on location. For local (in-town) meetups, delivery is often complimentary. For distances requiring travel, the fee will be calculated upon checkout.
-        * Q: How far in advance do I need to place a large order (2+ dozen)? A: We require **48 hours** notice for large orders.
-        * Q: Do you accept corporate orders or catering? A: Yes! For large events or catering, please ask me to start a custom order request so we can provide a personalized quote.
-        `;
-
-        const systemPrompt = `
-        You are 'Sprinkles', the virtual baker and assistant for K's Kupcakes, a made-to-order, home-based bakery.
-        Your primary directive is to answer customer questions using ONLY the provided knowledge base (KB).
-        If a question cannot be answered with the KB, politely state that you do not have that information and provide the shop's phone number ((407) 799-0341) for human assistance.
-
-        Persona Rules:
-        1. Tone: Cheerful, friendly, and professional. Use light baking metaphors (e.g., "Let's whip up an answer," "That's the icing on the cake!").
-        2. Focus: Emphasize that the bakery is made-to-order (customers choose the flavor) and home-based (no public storefront).
-        3. Lead Qualification: If the user explicitly asks to "start a custom order," "place a large order," or "ask about a cake," immediately trigger the "CUSTOM_ORDER_FLOW" by starting the conversation with Step 1 of the Lead Qualification Script. Do not answer other questions until the flow is complete or canceled.
-
-        Lead Qualification Script (CUSTOM_ORDER_FLOW):
-        Step 1: "I'd be happy to start that for you! To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back?"
-        Step 2 (After Step 1 is answered): "Thank you! I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)"
-        Step 3 (After Step 2 is answered): "Perfect! I have captured all the delicious details: [FULL RECAP OF ORDER]. Our baker will review these details and contact you at [PHONE NUMBER] within 24 hours to confirm the final quote and collect the deposit. Is there anything else I can help you with today?"
-        `;
-
-        // --- The core logic to handle the chat interaction and API call ---
-
-        const chatHistory = [];
-        let isInOrderFlow = false;
-        let orderStep = 0;
-        let customOrderDetails = {};
-        let authPromise = null; // Promise to track authentication status
-        let isAuthError = false; // New flag to stop flow if auth fails
-
-        /**
-         * Handles the logic for the custom order qualification flow.
-         * @param {string} userMessage The user's latest message.
-         * @returns {string} The chatbot's response.
-         */
-        function handleCustomOrderFlow(userMessage) {
-            console.log(`[FLOW DEBUG] Entered Flow. Current Step: ${orderStep}, Message: "${userMessage.substring(0, 30)}..."`);
-            
-            if (isAuthError) {
-                return "I'm sorry, I cannot start a custom order right now. There is a technical issue saving leads. Please call our baker directly at (407) 799-0341.";
-            }
-
-            // If the user tries to exit the flow
-            if (userMessage.toLowerCase().includes('cancel') || userMessage.toLowerCase().includes('stop')) {
-                isInOrderFlow = false;
-                orderStep = 0;
-                customOrderDetails = {};
-                console.log("[FLOW DEBUG] Flow Canceled.");
-                return "Order flow canceled. Feel free to ask any other questions about K's Kupcakes!";
-            }
-
-            // Step 1: Collect Date, Time, Type, Name, Phone Number
-            if (orderStep === 1) {
-                customOrderDetails.step1 = userMessage;
-                orderStep = 2;
-                console.log("[FLOW DEBUG] Step 1 complete. Advancing to Step 2.");
-                return "Thank you! I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)";
-            } 
-            
-            // Step 2: Collect Flavor/Theme/Allergies and Delivery Address
-            else if (orderStep === 2) {
-                customOrderDetails.step2 = userMessage;
-                orderStep = 3;
-                
-                // Reset flow variables
-                isInOrderFlow = false;
-                orderStep = 0;
-                
-                // --- Start of improved recap and phone number extraction ---
-                const finalRecap = `Your custom order details (Date/Type: ${customOrderDetails.step1.substring(0, 20)}..., Flavor/Delivery: ${customOrderDetails.step2.substring(0, 20)}...) have been logged.`;
-
-                // Attempt to find a standard phone number format in Step 1's input
-                const phoneNumMatch = customOrderDetails.step1.match(/(\d{3}[-.\s]?){2}\d{4}/);
-                const phoneNum = phoneNumMatch ? phoneNumMatch[0] : 'the number you provided';
-                
-                console.log("[FLOW DEBUG] Step 2 complete. Attempting to save lead...");
-
-                // IMPORTANT: Send the data to the Admin Dashboard's database.
-                // We use 'await authPromise' to ensure we are authenticated before saving the lead.
-                authPromise.then(() => {
-                    saveCustomOrderLead(customOrderDetails.step1, customOrderDetails.step2);
-                });
-
-                return `Perfect! I have captured all the delicious details. ${finalRecap} Our baker will review these details and contact you at ${phoneNum} within 24 hours to confirm the final quote and collect the deposit. Is there anything else I can help you with today?`;
-            }
-
-            // Initialize flow if triggered (only runs if orderStep is 0)
-            if (orderStep === 0) {
-                orderStep = 1;
-                isInOrderFlow = true;
-                console.log("[FLOW DEBUG] Flow initialized to Step 1.");
-                return "I'd be happy to start that for you! To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back?";
-            }
-            
-            // Fallback for unexpected state (shouldn't happen, but good for debugging)
-            console.error(`[FLOW DEBUG] Unexpected state reached: orderStep=${orderStep}, isInOrderFlow=${isInOrderFlow}. Restarting flow.`);
-            orderStep = 1;
-            isInOrderFlow = true;
-            return "Oops, I got confused. Let's restart. To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back?";
-        }
-
-        // --- FIREBASE SETUP FOR SAVING LEADS ---
+        // --- FIREBASE SETUP ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, onSnapshot, doc, updateDoc, serverTimestamp, setDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Enable debug logging for Firestore
+        setLogLevel('debug');
 
-        // Global variables provided by the Canvas environment (used if available)
+        // Use the global variables provided by the Canvas environment
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
         // --- MANUAL CONFIGURATION REQUIRED FOR EXTERNAL DEPLOYMENT ---
-        // These values are sourced from the Firebase project settings for the Web App.
+        // NOTE: These MUST match the values used in client_chatbot.html
         const MANUAL_FIREBASE_CONFIG = {
-            // NOTE: These values caused the auth/configuration-not-found error.
-            // Ensure Anonymous Sign-in is ENABLED in Firebase Console > Authentication > Sign-in method.
             apiKey: "AIzaSyA4DRHNH-ebn_z6zolcLLkZctTKD9HbPyY", 
             authDomain: "kskupcakeleads.firebaseapp.com",
             projectId: "kskupcakeleads",
@@ -219,201 +93,206 @@
         };
         // --- END: MANUAL CONFIGURATION ---
 
-        let firebaseConfig = MANUAL_FIREBASE_CONFIG; // Start with manual config for client app
+        let firebaseConfig = MANUAL_FIREBASE_CONFIG;
 
         // Check for Canvas environment configuration override
         if (typeof __firebase_config !== 'undefined' && JSON.stringify(__firebase_config) !== '{}') {
             firebaseConfig = JSON.parse(__firebase_config);
         }
 
-        // Configuration check before initialization 
-        if (firebaseConfig.apiKey === "YOUR_API_KEY" || firebaseConfig.appId === "YOUR_APP_APPID") {
-            console.error("Firebase Config Missing: Please add your Firebase API Key and App ID to the MANUAL_FIREBASE_CONFIG in client_chatbot.html.");
-            document.addEventListener('DOMContentLoaded', () => {
-                const sendButton = document.getElementById('send-button');
-                if (sendButton) sendButton.disabled = true;
-                appendMessage('bot', "⚠️ Database Error: Please update the configuration in the code to enable lead saving.");
-            });
-            throw new Error("Firebase Configuration Incomplete. Cannot initialize Firebase services.");
+        // Configuration check
+        if (!firebaseConfig || !firebaseConfig.apiKey) {
+            document.getElementById('status-message').className = 'mb-4 p-3 bg-red-100 text-red-800 rounded-lg text-sm block';
+            document.getElementById('status-message').textContent = 'Error: Firebase configuration is missing or incomplete. Cannot connect to the database.';
+            throw new Error("Firebase Configuration Incomplete.");
         }
 
+        // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
-        let currentUserId = 'client-bot-user'; 
+        
+        const statusMessage = document.getElementById('status-message');
+        const leadsContainer = document.getElementById('leads-container');
+        const noLeadsMessage = document.getElementById('no-leads');
+        const securityWarning = document.getElementById('security-warning');
+        securityWarning.classList.remove('hidden'); 
+        leadsContainer.classList.add('hidden'); 
 
-        // Authenticate anonymously (required for Firestore rules) and store the promise
-        authPromise = signInAnonymously(auth).then(userCredential => {
-            currentUserId = userCredential.user.uid;
-            console.log("Chatbot authenticated anonymously with ID:", currentUserId);
-        }).catch(error => {
-            console.error("Anonymous authentication failed:", error);
-            // Set flag to stop the flow from trying to save data later
-            isAuthError = true; 
-            // Inform the user in the chat about the critical error immediately after the greeting
-            appendMessage('bot', "🚨 Critical Error: I cannot access the order system. Please ensure Anonymous Sign-in is enabled in your Firebase Console and refresh the app.");
-        });
+        let isAuthReady = false;
+        let currentUserId = null;
 
-
-        // Function to save the collected order to Firestore
-        async function saveCustomOrderLead(step1Details, step2Details) {
-            if (isAuthError) {
-                 console.warn("Save skipped: Authentication failed previously.");
-                 return; // Prevent saving if authentication failed
-            }
-
-            try {
-                // Public data path: /artifacts/{appId}/public/data/orders
-                const ordersCollection = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
-                
-                await addDoc(ordersCollection, {
-                    status: 'New Lead',
-                    step1_details: step1Details,
-                    step2_details: step2Details,
-                    timestamp: serverTimestamp(),
-                    client_id: currentUserId, // Log the anonymous client ID
-                });
-                console.log("Custom order lead successfully logged to Firestore.");
-            } catch (e) {
-                // *** IMPROVED ERROR LOGGING HERE ***
-                console.error("FIREBASE LEAD SAVE FAILED:", e.code || e.name, e.message);
-                
-                let userFriendlyError = "There was an error logging your request to our system. ";
-                if (e.code === 'permission-denied') {
-                    userFriendlyError += "The baker's system is rejecting the data. This means the Anonymous Sign-in might be off, or the **Firestore security rules need to be published**.";
-                } else if (e.code) {
-                    userFriendlyError += `A technical error (${e.code}) occurred.`;
-                } else {
-                    userFriendlyError += "Please try again or call our baker directly at (407) 799-0341.";
-                }
-
-                appendMessage('bot', userFriendlyError);
-            }
+        /**
+         * Signs in the user anonymously if no custom token is provided.
+         */
+        async function authenticate() {
+             statusMessage.classList.remove('hidden');
+             statusMessage.textContent = 'Authenticating...';
+             
+             try {
+                // The client chatbot is using Anonymous auth, so the dashboard should too.
+                await signInAnonymously(auth);
+             } catch (error) {
+                 console.error("Anonymous authentication failed:", error);
+                 statusMessage.className = 'mb-4 p-3 bg-red-100 text-red-800 rounded-lg text-sm block';
+                 statusMessage.textContent = `Authentication Error: ${error.message}. Ensure Anonymous Sign-in is enabled.`;
+                 isAuthReady = false;
+                 return;
+             }
         }
 
         /**
-         * Main function to interact with the Gemini API.
-         * @param {string} userQuery The user's input message.
-         * @returns {Promise<string>} The chatbot's response.
+         * Starts the real-time listener for the leads collection.
          */
-        async function getGeminiResponse(userQuery) {
-            if (!userQuery) return "I need a message to get started! Ask me about flavors, delivery, or custom orders.";
-
-            // Check if the user is currently in the order flow
-            const orderKeywords = ['custom order', 'place order', 'start order', 'large order', 'cake', 'catering'];
-            const triggersOrderFlow = orderKeywords.some(keyword => userQuery.toLowerCase().includes(keyword));
-
-            if (isInOrderFlow || triggersOrderFlow) {
-                return handleCustomOrderFlow(userQuery);
+        function startLeadListener() {
+            if (!isAuthReady) {
+                console.warn("Authentication not ready. Skipping lead listener start.");
+                return;
             }
 
-            // Add user message to history (for standard chat)
-            chatHistory.push({ role: "user", parts: [{ text: userQuery + " based on the knowledge base." }] });
-
-            // Include the Knowledge Base content directly in the prompt for grounding
-            const fullQuery = `
-                KNOWLEDGE BASE:\n---\n${knowledgeBase}\n---\n
-                USER QUERY: ${userQuery}
-            `;
-
-            const payload = {
-                contents: [{ role: "user", parts: [{ text: fullQuery }] }],
-                systemInstruction: { parts: [{ text: systemPrompt }] },
-            };
-
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
-
-            let response;
-            let retries = 0;
-            const MAX_RETRIES = 5;
-
-            while (retries < MAX_RETRIES) {
-                try {
-                    response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-
-                    if (response.ok) {
-                        const result = await response.json();
-                        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-                        if (text) {
-                            chatHistory.push({ role: "model", parts: [{ text: text }] });
-                            return text;
-                        }
-                    }
-                } catch (error) {
-                    console.error(`Attempt ${retries + 1} failed:`, error);
-                }
-
-                retries++;
-                if (retries < MAX_RETRIES) {
-                    const delay = Math.pow(2, retries) * 1000; // Exponential backoff
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                }
-            }
-
-            return "Oops! I seem to have mixed up the ingredients. Please try your question again, or call our baker directly at (407) 799-0341!";
-        }
-
-        // Helper function for UI updates
-        function appendMessage(sender, text) {
-            const chatbox = document.getElementById('chat-messages');
-            const messageElement = document.createElement('div');
-            messageElement.className = sender === 'user' ? 'user-message' : 'bot-message';
-            messageElement.innerHTML = `
-                <div class="p-3 rounded-xl shadow-md max-w-xs md:max-w-md ${sender === 'user' ? 'bg-rose-100 text-rose-800 ml-auto' : 'bg-white text-gray-700'}">
-                    ${text.replace(/\n/g, '<br>')}
-                </div>
-                <small class="text-xs text-gray-400 mt-1 block ${sender === 'user' ? 'text-right' : 'text-left'}">${sender === 'user' ? 'You' : 'Sprinkles'}</small>
-            `;
-            chatbox.appendChild(messageElement);
-            chatbox.scrollTop = chatbox.scrollHeight; // Auto-scroll to latest message
-        }
-
-        async function sendMessage() {
-            const inputElement = document.getElementById('user-input');
-            const message = inputElement.value.trim();
-            if (message === '') return;
+            // Public data path: /artifacts/{appId}/public/data/orders
+            const collectionPath = `artifacts/${appId}/public/data/orders`; // The path being queried
+            console.log("Attempting to listen to collection:", collectionPath);
             
-            // Configuration check for runtime
-            if (firebaseConfig.apiKey === "YOUR_API_KEY" || firebaseConfig.appId === "YOUR_APP_APPID") {
-                 appendMessage('bot', "⚠️ Please complete the Firebase configuration in the code to enable lead saving.");
-                 return;
-            }
+            const ordersCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
+            // Query to fetch all orders
+            const q = query(ordersCollectionRef);
 
-            inputElement.value = '';
-            appendMessage('user', message);
-            document.getElementById('send-button').disabled = true;
+            statusMessage.textContent = 'Listening for new leads...';
 
-            // Show typing indicator
-            const typingIndicator = document.getElementById('typing-indicator');
-            typingIndicator.classList.remove('hidden');
-            typingIndicator.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            // Real-time listener
+            onSnapshot(q, (snapshot) => {
+                let leads = [];
+                snapshot.forEach(doc => {
+                    leads.push({ id: doc.id, ...doc.data() });
+                });
 
+                // HIDE ERROR MESSAGES ON SUCCESS
+                securityWarning.classList.add('hidden'); 
+                leadsContainer.classList.remove('hidden');
 
-            // Get the response
-            const botResponse = await getGeminiResponse(message);
+                // In-memory sort: Newest leads first
+                leads.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
 
-            // Hide typing indicator and display response
-            typingIndicator.classList.add('hidden');
-            appendMessage('bot', botResponse);
-            document.getElementById('send-button').disabled = false;
+                renderLeads(leads);
+            }, (error) => {
+                console.error("Error listening to leads:", error);
+                // On permission error, display the strong warning and keep status message updated
+                securityWarning.classList.remove('hidden');
+                leadsContainer.classList.add('hidden');
+                statusMessage.className = 'mb-4 p-3 bg-yellow-100 text-yellow-800 rounded-lg text-sm block';
+                // Display the specific path that failed to help the user debug their rules
+                statusMessage.textContent = `ERROR: Database Connection Blocked. Check Security Rules (see critical warning below). Failed Path: ${collectionPath}`;
+            });
         }
 
-        // Attach event listeners when the window loads
-        window.onload = () => {
-            document.getElementById('send-button').addEventListener('click', sendMessage);
-            document.getElementById('user-input').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    sendMessage();
-                }
+        /**
+         * Renders the lead cards in the UI.
+         * @param {Array} leads - Array of lead objects from Firestore.
+         */
+        function renderLeads(leads) {
+            leadsContainer.innerHTML = ''; // Clear existing leads
+            statusMessage.classList.add('hidden'); // Hide status once data is received
+            
+            // Filter for only 'New Lead' status to display in the main dashboard
+            const newLeads = leads.filter(lead => lead.status === 'New Lead');
+
+            if (newLeads.length === 0) {
+                noLeadsMessage.classList.remove('hidden');
+                return;
+            } else {
+                noLeadsMessage.classList.add('hidden');
+            }
+
+            newLeads.forEach(lead => {
+                const date = lead.timestamp ? new Date(lead.timestamp.seconds * 1000).toLocaleString() : 'N/A';
+                const card = document.createElement('div');
+                card.className = `lead-card bg-white border border-gray-200 p-5 rounded-lg shadow-md flex justify-between items-start`;
+                
+                card.innerHTML = `
+                    <div class="flex-grow">
+                        <div class="flex justify-between items-center mb-2">
+                            <h2 class="text-xl font-bold text-rose-600">New Custom Order Request</h2>
+                            <span class="text-sm font-medium text-gray-500">${date}</span>
+                        </div>
+                        <p class="text-sm font-semibold text-gray-700 mt-1">
+                            <span class="font-normal text-gray-500">Step 1:</span> ${lead.step1_details || 'No details provided.'}
+                        </p>
+                        <p class="text-sm font-semibold text-gray-700 mt-1">
+                            <span class="font-normal text-gray-500">Step 2:</span> ${lead.step2_details || 'No details provided.'}
+                        </p>
+                        <small class="text-xs text-gray-400 mt-2 block">Client ID: ${lead.client_id || 'N/A'}</small>
+                    </div>
+                    <div class="ml-4 flex-shrink-0">
+                        <button data-lead-id="${lead.id}" 
+                                class="mark-contacted-btn bg-green-500 text-white font-semibold px-4 py-2 rounded-lg hover:bg-green-600 transition duration-150 shadow-md whitespace-nowrap">
+                            Mark Contacted
+                        </button>
+                    </div>
+                `;
+                leadsContainer.appendChild(card);
             });
 
-            // Initial greeting
-            appendMessage('bot', `Hello! I'm Sprinkles, your virtual baker and assistant for K's Kupcakes. How can I help you whip up the perfect order today? (Try asking about delivery, pricing, or "start a custom order"!)`);
-        };
+            // Attach event listeners to the new buttons
+            document.querySelectorAll('.mark-contacted-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const leadId = e.target.dataset.leadId;
+                    updateLeadStatus(leadId, 'Contacted');
+                });
+            });
+        }
+
+        /**
+         * Updates the status of a lead document in Firestore.
+         * @param {string} leadId - The ID of the document to update.
+         * @param {string} newStatus - The new status (e.g., 'Contacted').
+         */
+        async function updateLeadStatus(leadId, newStatus) {
+            if (!isAuthReady) {
+                console.error("Cannot update lead: Authentication not complete.");
+                return;
+            }
+
+            const button = document.querySelector(`[data-lead-id="${leadId}"]`);
+            if (button) button.disabled = true;
+
+            try {
+                const leadRef = doc(db, 'artifacts', appId, 'public', 'data', 'orders', leadId);
+                await updateDoc(leadRef, {
+                    status: newStatus,
+                    contacted_by: currentUserId,
+                    contacted_at: serverTimestamp()
+                });
+                console.log(`Lead ${leadId} updated to ${newStatus}.`);
+            } catch (e) {
+                console.error("Error updating lead status (Permissions likely):", e);
+                // Simple error notification
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'p-2 mt-2 bg-red-100 text-red-800 rounded-md text-xs';
+                errorDiv.textContent = `Update Failed: ${e.code || e.message}. Did you publish the 'update' rule?`;
+                leadsContainer.prepend(errorDiv);
+                if (button) button.disabled = false;
+                setTimeout(() => errorDiv.remove(), 5000); // Remove after 5 seconds
+            }
+        }
+
+        // --- Main Execution ---
+        
+        // Use onAuthStateChanged to ensure we only start listening AFTER authentication
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUserId = user.uid;
+                isAuthReady = true;
+                statusMessage.className = 'mb-4 p-3 bg-green-100 text-green-800 rounded-lg text-sm block';
+                statusMessage.textContent = `Successfully connected as user: ${currentUserId}`;
+                console.log(`User is signed in. UID: ${currentUserId}`);
+                startLeadListener();
+            } else {
+                // User is signed out or initial check failed, attempt to sign in anonymously
+                authenticate();
+            }
+        });
+
     </script>
 </body>
 </html>
